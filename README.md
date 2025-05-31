@@ -45,17 +45,8 @@ git clone https://github.com/Zch6111/AI_Text_Comfyui.git
 
 然后设置你的 OpenAI API 密钥：
 
-- **Windows：**
+- **api_key：sk-xxx**
 
-```cmd
-set OPENAI_API_KEY=sk-xxxxx
-```
-
-- **macOS / Linux：**
-
-```bash
-export OPENAI_API_KEY=sk-xxxxx
-```
 
 > ⚠️ 每次重启终端后请重新设置，或将其写入启动脚本中以自动加载。
 
