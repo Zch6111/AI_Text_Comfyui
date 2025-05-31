@@ -63,20 +63,13 @@ class AutoPromptNode:
             "required": {
                 "api_key": ("STRING", {"multiline": False, "default": "sk-xxx"}),
                 "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],),
-                "system_prompt": ("STRING", {"multiline": True, "default":
-                    "You are an expert prompt engineer for AI image generation models, specifically for the 'Flux' model. "
-                    "Your task is to generate creative and diverse prompts for 'Flux' model. Each prompt must include the Lora trigger: "
-                    "'brita water filter with blue lid, product photography'. The scene should feature a cute animal "
-                    "in a living room, curiously observing this water filter. Ensure variety in animal type, "
-                    "living room style, lighting, and the animal's specific curious action. "
-                    "Output exactly Flux prompts directly and based on best practice. Format the output as line separated plain text without irrelevant details."}),
                 "num_prompts": ("INT", {"default": 25, "min": 1, "max": 100}),
-                "subject": ("STRING", {"default": "A cute animal (e.g., kitten, puppy, bunny, hamster, small fox, baby owl)"}),
-                "obj": ("STRING", {"default": "A Brita water filter pitcher"}),
-                "lora_trigger": ("STRING", {"default": "brita water filter with blue lid, product photography"}),
-                "setting": ("STRING", {"default": "A living room (e.g., modern, cozy, minimalist, bohemian)"}),
-                "interaction": ("STRING", {"default": "The animal is curious about the water filter (e.g., sniffing, pawing, tilting head, peering into it)"}),
-                "style": ("STRING", {"default": "Photorealistic or beautifully illustrative, with good lighting"}),
+                "subject": ("STRING", {"default": "A futuristic city at night"}),
+                "obj": ("STRING", {"default": "A flying car"}),
+                "lora_trigger": ("STRING", {"default": "cinematic lighting, concept art"}),
+                "setting": ("STRING", {"default": "Urban skyline, neon-lit, rainy"}),
+                "interaction": ("STRING", {"default": "The object is hovering near buildings, glowing"}),
+                "style": ("STRING", {"default": "high detail, 4k, digital painting"})
             }
         }
 
@@ -84,28 +77,67 @@ class AutoPromptNode:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_auto_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Auto-rotating prompt generator. Outputs a new prompt line every run, ready for CLIPTextEncode."
+    DESCRIPTION = "Auto-rotating smart prompt generator. Each run outputs a new line with dynamic prompt structure."
 
-    def generate_auto_prompt(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
-        key = f"{api_key}_{model}_{num_prompts}"
+    def generate_auto_prompt(self, api_key, model, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
+        key = f"{api_key}_{model}_{num_prompts}_{subject}_{obj}"
         if key not in self.state:
             self.state[key] = {"index": 0, "lines": []}
 
-        # If no cached prompts, fetch
         if not self.state[key]["lines"]:
-            generator = PromptGeneratorCore(api_key, model, system_prompt, num_prompts,
-                                            subject, obj, lora_trigger, setting, interaction, style)
-            output = generator.generate()
-            self.state[key]["lines"] = [line.strip() for line in output.split("\\n") if line.strip()]
+            # ⬇️ 自动构建 system_prompt 和 user_prompt
+            system_prompt = (
+                "You are a creative prompt engineer for Flux. Generate diverse prompts for an AI image model. "
+                "Each prompt must include the LoRA keyword and combine all elements clearly and imaginatively. "
+                "Output line-separated plain text only."
+            )
+            user_prompt = (
+                f"Generate {num_prompts} image generation prompts using the following core elements:\n"
+                f"1. Subject: {subject}\n"
+                f"2. Object: {obj}\n"
+                f"3. LoRA Trigger: '{lora_trigger}'\n"
+                f"4. Setting: {setting}\n"
+                f"5. Interaction: {interaction}\n"
+                f"6. Style: {style}\n"
+                f"All prompts should begin with the LoRA trigger. Output line-separated plain text only, no extra commentary."
+            )
 
+            # 调用 Chat API
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model,
+                "temperature": 0.88,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            }
+
+            try:
+                request = urllib.request.Request(
+                    "https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers=headers,
+                    method='POST'
+                )
+                with urllib.request.urlopen(request) as response:
+                    result = json.loads(response.read().decode('utf-8'))
+                    text = result['choices'][0]['message']['content']
+                    self.state[key]["lines"] = [line.strip() for line in text.split("\\n") if line.strip()]
+            except Exception as e:
+                return (f"Error: {str(e)}",)
+
+        # 自动轮询
         lines = self.state[key]["lines"]
         idx = self.state[key]["index"] % len(lines)
         prompt = lines[idx]
-
-        # Rotate to next
         self.state[key]["index"] += 1
 
         return (prompt,)
+
 
 
 NODE_CLASS_MAPPINGS = {
