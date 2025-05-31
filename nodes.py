@@ -1,10 +1,8 @@
+
 import os
 import json
 import urllib.request
 import urllib.error
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class PromptGeneratorCore:
     def __init__(self):
