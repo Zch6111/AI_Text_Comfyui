@@ -1,20 +1,27 @@
-
 import os
 import json
 import urllib.request
 import urllib.error
 
 class PromptGeneratorCore:
-    def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("Missing OPENAI_API_KEY environment variable.")
+    def __init__(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
+        self.api_key = api_key
+        self.model = model
+        self.system_prompt = system_prompt
         self.api_url = "https://openai-api.codejoyai.com:8003/openai/v1/chat/completions"
-        self.model = "chatgpt-4o-latest"
         self.temperature = 0.88
 
-        self.system_prompt = "You are a helpful assistant that creates prompts for AI applications."
-        self.user_prompt = "Generate 10 high-quality prompts for testing purposes."
+        self.user_prompt = (
+            f"Generate {num_prompts} image generation prompts based on the following core elements:\\n"
+            f"1. Model: Flux (implying detailed, high-quality output desired)\\n"
+            f"2. Subject: {subject}\\n"
+            f"3. Object: {obj}\\n"
+            f"4. Lora Trigger: Must include '{lora_trigger}'\\n"
+            f"5. Setting: {setting}\\n"
+            f"6. Interaction: {interaction}\\n"
+            f"7. Style: {style}\\n"
+            "Provide the output should start with the LoRA trigger. Response should be in line separated plain text without any irrelevant details."
+        )
 
     def generate(self):
         headers = {
@@ -51,23 +58,39 @@ class PromptGeneratorCore:
 class Node:
     CATEGORY = "flux/prompt"
 
-    def __init__(self):
-        self.generator = PromptGeneratorCore()
-
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {}}
+        return {
+            "required": {
+                "api_key": ("STRING", {"multiline": False, "default": "sk-xxx"}),
+                "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],),
+                "system_prompt": ("STRING", {"multiline": True, "default":
+                    "You are an expert prompt engineer for AI image generation models, specifically for the 'Flux' model. "
+                    "Your task is to generate creative and diverse prompts for 'Flux' model. Each prompt must include the Lora trigger: "
+                    "'brita water filter with blue lid, product photography'. The scene should feature a cute animal "
+                    "in a living room, curiously observing this water filter. Ensure variety in animal type, "
+                    "living room style, lighting, and the animal's specific curious action. "
+                    "Output exactly Flux prompts directly and based on best practice. Format the output as line separated plain text without irrelevant details."}),
+                "num_prompts": ("INT", {"default": 25, "min": 1, "max": 100}),
+                "subject": ("STRING", {"multiline": False, "default": "A cute animal (e.g., kitten, puppy, bunny, hamster, small fox, baby owl)"}),
+                "obj": ("STRING", {"multiline": False, "default": "A Brita water filter pitcher"}),
+                "lora_trigger": ("STRING", {"multiline": False, "default": "brita water filter with blue lid, product photography"}),
+                "setting": ("STRING", {"multiline": False, "default": "A living room (e.g., modern, cozy, minimalist, bohemian)"}),
+                "interaction": ("STRING", {"multiline": False, "default": "The animal is curious about the water filter (e.g., sniffing, pawing, tilting head, peering into it)"}),
+                "style": ("STRING", {"multiline": False, "default": "Photorealistic or beautifully illustrative, with good lighting"}),
+            }
+        }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompts",)
 
     FUNCTION = "generate_prompts"
     OUTPUT_NODE = False
-    DESCRIPTION = "Generate AI prompts using OpenAI Chat API."
+    DESCRIPTION = "Flexible AI image prompt generator with detailed configurable inputs."
 
-    def generate_prompts(self):
-        output = self.generator.generate()
-        return (output,)
+    def generate_prompts(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
+        generator = PromptGeneratorCore(api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style)
+        return (generator.generate(),)
 
 
 NODE_CLASS_MAPPINGS = {
