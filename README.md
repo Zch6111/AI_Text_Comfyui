@@ -43,7 +43,7 @@ AI_Text_Comfyui_NoDotenv/
 git clone https://github.com/Zch6111/AI_Text_Comfyui.git
 ```
 
-然后设置你的 OpenAI API 密钥：
+在节点第一行设置你的 OpenAI API 密钥：
 
 - **api_key：sk-xxx**
 
