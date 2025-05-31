@@ -1,3 +1,4 @@
+
 import os
 import json
 import urllib.request
@@ -12,14 +13,14 @@ class PromptGeneratorCore:
         self.temperature = 0.88
 
         self.user_prompt = (
-            f"Generate {num_prompts} image generation prompts based on the following core elements:\\n"
-            f"1. Model: Flux (implying detailed, high-quality output desired)\\n"
-            f"2. Subject: {subject}\\n"
-            f"3. Object: {obj}\\n"
-            f"4. Lora Trigger: Must include '{lora_trigger}'\\n"
-            f"5. Setting: {setting}\\n"
-            f"6. Interaction: {interaction}\\n"
-            f"7. Style: {style}\\n"
+            f"Generate {num_prompts} image generation prompts based on the following core elements:\n"
+            f"1. Model: Flux (implying detailed, high-quality output desired)\n"
+            f"2. Subject: {subject}\n"
+            f"3. Object: {obj}\n"
+            f"4. Lora Trigger: Must include '{lora_trigger}'\n"
+            f"5. Setting: {setting}\n"
+            f"6. Interaction: {interaction}\n"
+            f"7. Style: {style}\n"
             "Provide the output should start with the LoRA trigger. Response should be in line separated plain text without any irrelevant details."
         )
 
@@ -81,16 +82,18 @@ class Node:
             }
         }
 
-    RETURN_TYPES = ("STRING",)
+    RETURN_TYPES = ("LIST",)
     RETURN_NAMES = ("prompts",)
 
     FUNCTION = "generate_prompts"
     OUTPUT_NODE = False
-    DESCRIPTION = "Flexible AI image prompt generator with detailed configurable inputs."
+    DESCRIPTION = "Flexible AI image prompt generator with detailed configurable inputs, returns prompts as a list."
 
     def generate_prompts(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
         generator = PromptGeneratorCore(api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style)
-        return (generator.generate(),)
+        output = generator.generate()
+        prompt_list = [line.strip() for line in output.strip().split("\n") if line.strip()]
+        return (prompt_list,)
 
 
 NODE_CLASS_MAPPINGS = {
