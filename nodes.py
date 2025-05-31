@@ -1,4 +1,3 @@
-
 import os
 import json
 import urllib.request
@@ -45,19 +44,18 @@ class PromptGeneratorCore:
                 headers=headers,
                 method='POST'
             )
-
             with urllib.request.urlopen(request) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 return result['choices'][0]['message']['content']
-
-        except urllib.error.HTTPError as e:
-            return f"HTTP Error: {e.code} - {e.read().decode('utf-8')}"
         except Exception as e:
             return f"Error: {str(e)}"
 
 
-class Node:
+class AutoPromptNode:
     CATEGORY = "flux/prompt"
+
+    def __init__(self):
+        self.state = {}
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -73,33 +71,47 @@ class Node:
                     "living room style, lighting, and the animal's specific curious action. "
                     "Output exactly Flux prompts directly and based on best practice. Format the output as line separated plain text without irrelevant details."}),
                 "num_prompts": ("INT", {"default": 25, "min": 1, "max": 100}),
-                "subject": ("STRING", {"multiline": False, "default": "A cute animal (e.g., kitten, puppy, bunny, hamster, small fox, baby owl)"}),
-                "obj": ("STRING", {"multiline": False, "default": "A Brita water filter pitcher"}),
-                "lora_trigger": ("STRING", {"multiline": False, "default": "brita water filter with blue lid, product photography"}),
-                "setting": ("STRING", {"multiline": False, "default": "A living room (e.g., modern, cozy, minimalist, bohemian)"}),
-                "interaction": ("STRING", {"multiline": False, "default": "The animal is curious about the water filter (e.g., sniffing, pawing, tilting head, peering into it)"}),
-                "style": ("STRING", {"multiline": False, "default": "Photorealistic or beautifully illustrative, with good lighting"}),
+                "subject": ("STRING", {"default": "A cute animal (e.g., kitten, puppy, bunny, hamster, small fox, baby owl)"}),
+                "obj": ("STRING", {"default": "A Brita water filter pitcher"}),
+                "lora_trigger": ("STRING", {"default": "brita water filter with blue lid, product photography"}),
+                "setting": ("STRING", {"default": "A living room (e.g., modern, cozy, minimalist, bohemian)"}),
+                "interaction": ("STRING", {"default": "The animal is curious about the water filter (e.g., sniffing, pawing, tilting head, peering into it)"}),
+                "style": ("STRING", {"default": "Photorealistic or beautifully illustrative, with good lighting"}),
             }
         }
 
-    RETURN_TYPES = ("LIST",)
-    RETURN_NAMES = ("prompts",)
-
-    FUNCTION = "generate_prompts"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "generate_auto_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Flexible AI image prompt generator with detailed configurable inputs, returns prompts as a list."
+    DESCRIPTION = "Auto-rotating prompt generator. Outputs a new prompt line every run, ready for CLIPTextEncode."
 
-    def generate_prompts(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
-        generator = PromptGeneratorCore(api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style)
-        output = generator.generate()
-        prompt_list = [line.strip() for line in output.strip().split("\n") if line.strip()]
-        return (prompt_list,)
+    def generate_auto_prompt(self, api_key, model, system_prompt, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
+        key = f"{api_key}_{model}_{num_prompts}"
+        if key not in self.state:
+            self.state[key] = {"index": 0, "lines": []}
+
+        # If no cached prompts, fetch
+        if not self.state[key]["lines"]:
+            generator = PromptGeneratorCore(api_key, model, system_prompt, num_prompts,
+                                            subject, obj, lora_trigger, setting, interaction, style)
+            output = generator.generate()
+            self.state[key]["lines"] = [line.strip() for line in output.split("\\n") if line.strip()]
+
+        lines = self.state[key]["lines"]
+        idx = self.state[key]["index"] % len(lines)
+        prompt = lines[idx]
+
+        # Rotate to next
+        self.state[key]["index"] += 1
+
+        return (prompt,)
 
 
 NODE_CLASS_MAPPINGS = {
-    "PromptGeneratorNode": Node
+    "AutoPromptGeneratorNode": AutoPromptNode
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "PromptGeneratorNode": "Prompt Generator"
+    "AutoPromptGeneratorNode": "Prompt Generator (Auto Step)"
 }
