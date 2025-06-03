@@ -9,7 +9,7 @@ Repository = "https://github.com/Zch6111/AI_Text_Comfyui"
 #  Used by Comfy Registry https://registry.comfy.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "navi"
 DisplayName = "AI_Text_Comfyui"
 Icon = ""
 includes = []
