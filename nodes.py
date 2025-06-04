@@ -8,8 +8,6 @@ import io
 import numpy as np
 import torch
 
-# ========== Gemini Image To Prompt Node ==========
-
 class GeminiImageToPrompt:
     CATEGORY = "flux/prompt"
 
@@ -19,7 +17,8 @@ class GeminiImageToPrompt:
             "required": {
                 "api_key": ("STRING", {"multiline": False, "default": ""}),
                 "main_image": ("IMAGE", {"label": "Main Subject Image"}),
-                "background_image": ("IMAGE", {"label": "Background Scene Image"})
+                "background_image": ("IMAGE", {"label": "Background Scene Image"}),
+                "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],)
             }
         }
 
@@ -27,16 +26,16 @@ class GeminiImageToPrompt:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Extracts visual elements from two images using Gemini API and generates a natural prompt."
+    DESCRIPTION = "Extract subject + background + style + language from 2 images via OpenAI vision model."
 
     def encode_image(self, image_tensor):
         if isinstance(image_tensor, torch.Tensor):
             image_tensor = image_tensor.cpu().numpy()
 
-        if image_tensor.ndim == 4:  # batched tensor
+        if image_tensor.ndim == 4:
             image_tensor = image_tensor[0]
 
-        if image_tensor.ndim == 3 and image_tensor.shape[0] in (1, 3):  # CHW to HWC
+        if image_tensor.ndim == 3 and image_tensor.shape[0] in (1, 3):
             image_tensor = np.transpose(image_tensor, (1, 2, 0))
 
         image_array = (image_tensor * 255).clip(0, 255).astype(np.uint8)
@@ -49,45 +48,45 @@ class GeminiImageToPrompt:
         img.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    def call_gemini_api(self, api_key, img_base64, task):
+    def call_openai_vision(self, api_key, image_base64, model, role):
         headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         }
-
         body = {
-            "contents": [
+            "model": model,
+            "messages": [
                 {
-                    "parts": [
+                    "role": "user",
+                    "content": [
                         {
-                            "text": (
-                                f"Analyze the image and describe the {task} for use in AI image generation. "
-                                f"Include:\n- Description:\n- Style:\n- Language:\n"
-                            )
+                            "type": "text",
+                            "text": f"Describe the {role} in this image for AI image generation. Include:\n- Description:\n- Style:\n- Language:"
                         },
                         {
-                            "inline_data": {
-                                "mime_type": "image/png",
-                                "data": img_base64
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_base64}"
                             }
                         }
                     ]
                 }
-            ]
+            ],
+            "temperature": 0.5
         }
 
         try:
-            req = urllib.request.Request(
-                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent",
+            request = urllib.request.Request(
+                url="https://api.openai.com/v1/chat/completions",
                 data=json.dumps(body).encode("utf-8"),
                 headers=headers,
                 method="POST"
             )
-            with urllib.request.urlopen(req) as response:
-                res = json.loads(response.read().decode("utf-8"))
-                return res['candidates'][0]['content']['parts'][0]['text']
+            with urllib.request.urlopen(request) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result['choices'][0]['message']['content']
         except Exception as e:
-            return f"[Gemini Error] {e}"
+            return f"[OpenAI Error] {str(e)}"
 
     def extract_info(self, raw):
         info = {"description": "", "style": "", "language": ""}
@@ -102,12 +101,12 @@ class GeminiImageToPrompt:
                 info["description"] += " " + line.strip()
         return info
 
-    def generate_prompt(self, api_key, main_image, background_image):
+    def generate_prompt(self, api_key, main_image, background_image, model):
         main_b64 = self.encode_image(main_image)
         bg_b64 = self.encode_image(background_image)
 
-        main_raw = self.call_gemini_api(api_key, main_b64, "main subject")
-        bg_raw = self.call_gemini_api(api_key, bg_b64, "background scene")
+        main_raw = self.call_openai_vision(api_key, main_b64, model, "main subject")
+        bg_raw = self.call_openai_vision(api_key, bg_b64, model, "background scene")
 
         main_info = self.extract_info(main_raw)
         bg_info = self.extract_info(bg_raw)
@@ -121,8 +120,6 @@ class GeminiImageToPrompt:
 
         return (prompt,)
 
-
-# ========== Smart Auto Prompt Node (OpenAI) ==========
 
 class SmartAutoPromptNode:
     CATEGORY = "flux/prompt"
@@ -241,8 +238,6 @@ class SmartAutoPromptNode:
         except Exception as e:
             return (f"[Generation Error] {str(e)}",)
 
-
-# ========== Register Both Nodes ==========
 
 NODE_CLASS_MAPPINGS = {
     "SmartAutoPromptNode": SmartAutoPromptNode,
