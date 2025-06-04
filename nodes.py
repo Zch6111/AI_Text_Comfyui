@@ -6,6 +6,7 @@ import urllib.error
 from PIL import Image
 import io
 import numpy as np
+import torch
 
 ### ===== Gemini Image 2 Prompt Node ===== ###
 
@@ -29,11 +30,13 @@ class GeminiImageToPrompt:
     DESCRIPTION = "Extract main subject and background scene from two images using Gemini API and generate a descriptive prompt with style and language."
 
     def encode_image(self, image_data):
-        image_data = (image_data * 255).clip(0, 255).astype(np.uint8)
-        img = Image.fromarray(image_data)
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+    if isinstance(image_data, torch.Tensor):
+        image_data = image_data.cpu().numpy() 
+    image_data = (image_data * 255).clip(0, 255).astype(np.uint8)
+    img = Image.fromarray(image_data.squeeze()) 
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     def call_gemini_api(self, api_key, img_base64, task):
         headers = {
