@@ -133,14 +133,8 @@ class SmartAutoPromptNode:
             "required": {
                 "api_key": ("STRING", {"multiline": False, "default": "sk-xxx"}),
                 "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],),
-                "num_prompts": ("INT", {"default": 25, "min": 1, "max": 100}),
-                "prompt_input": ("STRING", {"multiline": True, "default": ""}),
-                "subject": ("STRING", {"default": ""}),
-                "obj": ("STRING", {"default": ""}),
-                "lora_trigger": ("STRING", {"default": ""}),
-                "setting": ("STRING", {"default": ""}),
-                "interaction": ("STRING", {"default": ""}),
-                "style": ("STRING", {"default": ""}),
+                "num_prompts": ("INT", {"default": 5, "min": 1, "max": 100}),
+                "prompt_input": ("STRING", {"multiline": True, "default": ""})
             }
         }
 
@@ -148,77 +142,25 @@ class SmartAutoPromptNode:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Generate a single-line prompt using OpenAI API. Supports raw input or structured fields."
+    DESCRIPTION = "Rewrites a prompt to generate similar prompts with different compositions or angles."
 
-    def parse_prompt(self, api_key, model, prompt_input):
+    def generate_prompt(self, api_key, model, num_prompts, prompt_input):
         system = (
-            "You are an expert prompt parser. Given a detailed AI image generation prompt, "
-            "extract and return a JSON object with the following fields: subject, obj, lora_trigger, setting, interaction, style."
+            "You are an expert prompt writer. Rewrite the given prompt into different versions while keeping the subject, character, object, and style the same."
+            " Only vary composition, angle, camera view, or minor contextual differences. Output {num_prompts} line-separated versions."
         )
-        user = f"Prompt: {prompt_input}\nExtract to JSON:"
+
+        user = f"Prompt to rewrite:\n{prompt_input}\n\nPlease generate {num_prompts} alternative prompts."
+
         payload = {
             "model": model,
-            "temperature": 0.3,
+            "temperature": 0.7,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user}
             ]
         }
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        try:
-            req = urllib.request.Request(
-                url="https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(req) as res:
-                content = json.loads(res.read().decode("utf-8"))
-                return json.loads(content['choices'][0]['message']['content'])
-        except Exception as e:
-            return {"error": str(e)}
 
-    def generate_prompt(self, api_key, model, num_prompts, prompt_input,
-                        subject, obj, lora_trigger, setting, interaction, style):
-
-        if prompt_input.strip():
-            parsed = self.parse_prompt(api_key, model, prompt_input)
-            if "error" in parsed:
-                return (f"[Parse Error] {parsed['error']}",)
-            subject = parsed.get("subject", subject)
-            obj = parsed.get("obj", obj)
-            lora_trigger = parsed.get("lora_trigger", lora_trigger)
-            setting = parsed.get("setting", setting)
-            interaction = parsed.get("interaction", interaction)
-            style = parsed.get("style", style)
-
-        user_prompt = (
-            f"Generate {num_prompts} image generation prompts using:\n"
-            f"1. Subject: {subject}\n"
-            f"2. Object: {obj}\n"
-            f"3. LoRA Trigger: '{lora_trigger}'\n"
-            f"4. Setting: {setting}\n"
-            f"5. Interaction: {interaction}\n"
-            f"6. Style: {style}\n"
-            f"Start each prompt with the LoRA trigger. Line-separated output only."
-        )
-
-        system_prompt = (
-            "You are a professional prompt writer. Generate distinct, high-quality prompts with these elements. "
-            "Output only the prompts in plain text, no numbering or commentary."
-        )
-
-        payload = {
-            "model": model,
-            "temperature": 0.88,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        }
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -234,9 +176,9 @@ class SmartAutoPromptNode:
             with urllib.request.urlopen(request) as response:
                 result = json.loads(response.read().decode("utf-8"))
                 lines = [line.strip() for line in result['choices'][0]['message']['content'].split("\n") if line.strip()]
-                return (lines[0] if lines else "",)
+                return ("\n".join(lines[:num_prompts]),)
         except Exception as e:
-            return (f"[Generation Error] {str(e)}",)
+            return (f"[Rewrite Error] {str(e)}",)
 
 
 NODE_CLASS_MAPPINGS = {
