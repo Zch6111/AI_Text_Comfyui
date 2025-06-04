@@ -27,47 +27,41 @@ class GeminiImageToPrompt:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Extract main subject and background scene from two images using Gemini API and generate a descriptive prompt with style and language."
+    DESCRIPTION = "Extract subject + background + style + language from 2 images via Gemini API."
 
-    def encode_image(self, image_data):
-    if isinstance(image_data, torch.Tensor):
-        image_data = image_data.cpu().numpy() 
-    image_data = (image_data * 255).clip(0, 255).astype(np.uint8)
-    img = Image.fromarray(image_data.squeeze()) 
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+    def encode_image(self, image_tensor):
+        if isinstance(image_tensor, torch.Tensor):
+            image_tensor = image_tensor.cpu().numpy()
+        image_array = (image_tensor * 255).clip(0, 255).astype(np.uint8)
+        if image_array.shape[0] in (1, 3):  # CHW → HWC
+            image_array = np.transpose(image_array, (1, 2, 0))
+        img = Image.fromarray(image_array.squeeze())
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     def call_gemini_api(self, api_key, img_base64, task):
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": api_key
         }
-
         body = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": (
-                                f"Analyze the image and describe the {task} for use in AI image generation. "
-                                f"Include:\n- Description:\n- Style:\n- Language:\n"
-                            )
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/png",
-                                "data": img_base64
-                            }
-                        }
-                    ]
-                }
-            ]
+            "contents": [{
+                "parts": [
+                    {"text": (
+                        f"Analyze the image and describe the {task} for AI image generation.\n"
+                        f"Include:\n- Description:\n- Style:\n- Language:\n")},
+                    {"inline_data": {
+                        "mime_type": "image/png",
+                        "data": img_base64
+                    }}
+                ]
+            }]
         }
 
         try:
             req = urllib.request.Request(
-                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent",
                 data=json.dumps(body).encode("utf-8"),
                 headers=headers,
                 method="POST"
@@ -81,6 +75,7 @@ class GeminiImageToPrompt:
     def extract_info(self, raw):
         info = {"description": "", "style": "", "language": ""}
         for line in raw.strip().split("\n"):
+            line = line.strip()
             if line.lower().startswith("style:"):
                 info["style"] = line.split(":", 1)[-1].strip()
             elif line.lower().startswith("language:"):
@@ -88,7 +83,7 @@ class GeminiImageToPrompt:
             elif line.lower().startswith("description:"):
                 info["description"] = line.split(":", 1)[-1].strip()
             else:
-                info["description"] += " " + line.strip()
+                info["description"] += " " + line
         return info
 
     def generate_prompt(self, api_key, main_image, background_image):
