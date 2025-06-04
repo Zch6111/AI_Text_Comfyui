@@ -69,3 +69,7 @@ MIT License
 
 如需扩展：添加自定义输入字段（如提示数量、温度调节、模型名切换等），欢迎联系作者或提交 PR。  
 Feel free to contribute if you'd like to add UI controls or make the prompt logic customizable.
+
+---
+
+更新：新增读取图片画风和主题的节点
