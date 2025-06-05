@@ -8,119 +8,7 @@ import io
 import numpy as np
 import torch
 
-class GeminiImageToPrompt:
-    CATEGORY = "flux/prompt"
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "api_key": ("STRING", {"multiline": False, "default": ""}),
-                "main_image": ("IMAGE", {"label": "Main Subject Image"}),
-                "background_image": ("IMAGE", {"label": "Background Scene Image"}),
-                "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],)
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("prompt",)
-    FUNCTION = "generate_prompt"
-    OUTPUT_NODE = False
-    DESCRIPTION = "Extract subject + background + style + language from 2 images via OpenAI vision model."
-
-    def encode_image(self, image_tensor):
-        if isinstance(image_tensor, torch.Tensor):
-            image_tensor = image_tensor.cpu().numpy()
-
-        if image_tensor.ndim == 4:
-            image_tensor = image_tensor[0]
-
-        if image_tensor.ndim == 3 and image_tensor.shape[0] in (1, 3):
-            image_tensor = np.transpose(image_tensor, (1, 2, 0))
-
-        image_array = (image_tensor * 255).clip(0, 255).astype(np.uint8)
-
-        if image_array.ndim == 3 and image_array.shape[2] == 1:
-            image_array = image_array[:, :, 0]
-
-        img = Image.fromarray(image_array)
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-    def call_openai_vision(self, api_key, image_base64, model, role):
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        body = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Describe the {role} in this image for AI image generation. Include:\n- Description:\n- Style:\n- Language:"
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "temperature": 0.5
-        }
-
-        try:
-            request = urllib.request.Request(
-                url="https://api.openai.com/v1/chat/completions",
-                data=json.dumps(body).encode("utf-8"),
-                headers=headers,
-                method="POST"
-            )
-            with urllib.request.urlopen(request) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                return result['choices'][0]['message']['content']
-        except Exception as e:
-            return f"[OpenAI Error] {str(e)}"
-
-    def extract_info(self, raw):
-        info = {"description": "", "style": "", "language": ""}
-        for line in raw.strip().split("\n"):
-            if line.lower().startswith("style:"):
-                info["style"] = line.split(":", 1)[-1].strip()
-            elif line.lower().startswith("language:"):
-                info["language"] = line.split(":", 1)[-1].strip()
-            elif line.lower().startswith("description:"):
-                info["description"] = line.split(":", 1)[-1].strip()
-            else:
-                info["description"] += " " + line.strip()
-        return info
-
-    def generate_prompt(self, api_key, main_image, background_image, model):
-        main_b64 = self.encode_image(main_image)
-        bg_b64 = self.encode_image(background_image)
-
-        main_raw = self.call_openai_vision(api_key, main_b64, model, "main subject")
-        bg_raw = self.call_openai_vision(api_key, bg_b64, model, "background scene")
-
-        main_info = self.extract_info(main_raw)
-        bg_info = self.extract_info(bg_raw)
-
-        prompt = (
-            f"{main_info['description'].strip()} placed within {bg_info['description'].strip()}. "
-            f"This image is rendered in {main_info['style'] or bg_info['style'] or 'cinematic'} style, "
-            f"using {main_info['language'] or bg_info['language'] or 'natural'} language. "
-            f"Focus on mood, lighting, and artistic detail."
-        )
-
-        return (prompt,)
-
-
+# ========== SmartAutoPromptNode ==========
 class SmartAutoPromptNode:
     CATEGORY = "flux/prompt"
 
@@ -142,12 +30,13 @@ class SmartAutoPromptNode:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Rewrites a prompt to generate similar prompts with different compositions or angles."
+    DESCRIPTION = "Rewrites a prompt with the same style but different angles or views."
 
     def generate_prompt(self, api_key, model, num_prompts, prompt_input):
         system = (
-            "You are an expert prompt writer. Rewrite the given prompt into different versions while keeping the subject, character, object, and style the same."
-            " Only vary composition, angle, camera view, or minor contextual differences. Output {num_prompts} line-separated versions."
+            "You are an expert prompt writer. Rewrite the given prompt into different versions "
+            "while keeping the subject, character, object, and style the same. Only vary composition, "
+            "angle, camera view, or minor contextual differences. Output {num_prompts} line-separated versions."
         )
 
         user = f"Prompt to rewrite:\n{prompt_input}\n\nPlease generate {num_prompts} alternative prompts."
@@ -171,7 +60,7 @@ class SmartAutoPromptNode:
                 "https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
                 data=json.dumps(payload).encode("utf-8"),
                 headers=headers,
-                method='POST'
+                method="POST"
             )
             with urllib.request.urlopen(request) as response:
                 result = json.loads(response.read().decode("utf-8"))
@@ -181,6 +70,99 @@ class SmartAutoPromptNode:
             return (f"[Rewrite Error] {str(e)}",)
 
 
+# ========== GeminiImageToPrompt ==========
+class GeminiImageToPrompt:
+    CATEGORY = "flux/prompt"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {"multiline": False, "default": ""}),
+                "main_image": ("IMAGE", {"label": "Main Subject Image"}),
+                "background_image": ("IMAGE", {"label": "Background Scene Image"}),
+                "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],)
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "generate_prompt"
+    OUTPUT_NODE = False
+    DESCRIPTION = "Extract subject + background + style + language from 2 images via OpenAI vision model."
+
+    def encode_image(self, image_tensor):
+        if isinstance(image_tensor, torch.Tensor):
+            image_tensor = image_tensor.cpu().numpy()
+        if image_tensor.ndim == 4:
+            image_tensor = image_tensor[0]
+        if image_tensor.ndim == 3 and image_tensor.shape[0] in (1, 3):
+            image_tensor = np.transpose(image_tensor, (1, 2, 0))
+        image_array = (image_tensor * 255).clip(0, 255).astype(np.uint8)
+        if image_array.ndim == 3 and image_array.shape[2] == 1:
+            image_array = image_array[:, :, 0]
+        img = Image.fromarray(image_array)
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    def call_openai_vision(self, api_key, image_base64, model, role):
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        body = {
+            "model": model,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"Describe the {role} in this image for AI image generation. Include:\n- Description:\n- Style:\n- Language:"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                ]
+            }],
+            "temperature": 0.5
+        }
+        try:
+            request = urllib.request.Request("https://api.openai.com/v1/chat/completions",
+                                             data=json.dumps(body).encode("utf-8"),
+                                             headers=headers,
+                                             method="POST")
+            with urllib.request.urlopen(request) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result['choices'][0]['message']['content']
+        except Exception as e:
+            return f"[OpenAI Error] {str(e)}"
+
+    def extract_info(self, raw):
+        info = {"description": "", "style": "", "language": ""}
+        for line in raw.strip().split("\n"):
+            if line.lower().startswith("style:"):
+                info["style"] = line.split(":", 1)[-1].strip()
+            elif line.lower().startswith("language:"):
+                info["language"] = line.split(":", 1)[-1].strip()
+            elif line.lower().startswith("description:"):
+                info["description"] = line.split(":", 1)[-1].strip()
+            else:
+                info["description"] += " " + line.strip()
+        return info
+
+    def generate_prompt(self, api_key, main_image, background_image, model):
+        main_b64 = self.encode_image(main_image)
+        bg_b64 = self.encode_image(background_image)
+        main_raw = self.call_openai_vision(api_key, main_b64, model, "main subject")
+        bg_raw = self.call_openai_vision(api_key, bg_b64, model, "background scene")
+        main_info = self.extract_info(main_raw)
+        bg_info = self.extract_info(bg_raw)
+        prompt = (
+            f"{main_info['description'].strip()} placed within {bg_info['description'].strip()}. "
+            f"This image is rendered in {main_info['style'] or bg_info['style'] or 'cinematic'} style, "
+            f"using {main_info['language'] or bg_info['language'] or 'natural'} language. "
+            f"Focus on mood, lighting, and artistic detail."
+        )
+        return (prompt,)
+
+
+# ========== AutoPromptGeneratorNode ==========
 class AutoPromptNode:
     CATEGORY = "flux/prompt"
 
@@ -194,12 +176,7 @@ class AutoPromptNode:
                 "api_key": ("STRING", {"multiline": False, "default": "sk-xxx"}),
                 "model": (["gpt-4o", "gpt-4", "gpt-3.5-turbo"],),
                 "num_prompts": ("INT", {"default": 25, "min": 1, "max": 100}),
-                "subject": ("STRING", {"default": "A futuristic city at night"}),
-                "obj": ("STRING", {"default": "A flying car"}),
-                "lora_trigger": ("STRING", {"default": "cinematic lighting, concept art"}),
-                "setting": ("STRING", {"default": "Urban skyline, neon-lit, rainy"}),
-                "interaction": ("STRING", {"default": "The object is hovering near buildings, glowing"}),
-                "style": ("STRING", {"default": "high detail, 4k, digital painting"})
+                "prompt_input": ("STRING", {"multiline": True, "default": ""})
             }
         }
 
@@ -207,50 +184,64 @@ class AutoPromptNode:
     RETURN_NAMES = ("prompt",)
     FUNCTION = "generate_auto_prompt"
     OUTPUT_NODE = False
-    DESCRIPTION = "Auto-rotating smart prompt generator. Each run outputs a new line with dynamic prompt structure."
+    DESCRIPTION = "Smart prompt generator. Parses input and generates dynamic prompts from structured info."
 
-    def generate_auto_prompt(self, api_key, model, num_prompts, subject, obj, lora_trigger, setting, interaction, style):
-        key = f"{api_key}_{model}_{num_prompts}_{subject}_{obj}"
+    def generate_auto_prompt(self, api_key, model, num_prompts, prompt_input):
+        key = f"{api_key}_{model}_{num_prompts}_{hash(prompt_input)}"
         if key not in self.state:
             self.state[key] = {"index": 0, "lines": []}
 
         if not self.state[key]["lines"]:
-            system_prompt = (
-                "You are a creative prompt engineer for Flux. Generate diverse prompts for an AI image model. "
-                "Each prompt must include the LoRA keyword and combine all elements clearly and imaginatively. "
-                "Output line-separated plain text only."
-            )
-            user_prompt = (
-                f"Generate {num_prompts} image generation prompts using the following core elements:\n"
-                f"1. Subject: {subject}\n"
-                f"2. Object: {obj}\n"
-                f"3. LoRA Trigger: '{lora_trigger}'\n"
-                f"4. Setting: {setting}\n"
-                f"5. Interaction: {interaction}\n"
-                f"6. Style: {style}\n"
-                f"All prompts should begin with the LoRA trigger. Output line-separated plain text only, no extra commentary."
-            )
-
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
+            extract_payload = {
+                "model": model,
+                "temperature": 0.3,
+                "messages": [
+                    {"role": "system", "content": "Extract the following fields from the given prompt: subject, obj, lora_trigger, setting, interaction, style. Return as JSON."},
+                    {"role": "user", "content": f"Prompt: {prompt_input}\nExtract to JSON:"}
+                ]
+            }
+            try:
+                req = urllib.request.Request(
+                    url="https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
+                    data=json.dumps(extract_payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST"
+                )
+                with urllib.request.urlopen(req) as res:
+                    parsed = json.loads(res.read().decode("utf-8"))['choices'][0]['message']['content']
+                    parsed_json = json.loads(parsed)
+            except Exception as e:
+                return (f"Error parsing input: {str(e)}",)
+
+            user_prompt = (
+                f"Generate {num_prompts} prompts using:\n"
+                f"1. Subject: {parsed_json.get('subject','')}\n"
+                f"2. Object: {parsed_json.get('obj','')}\n"
+                f"3. LoRA Trigger: {parsed_json.get('lora_trigger','')}\n"
+                f"4. Setting: {parsed_json.get('setting','')}\n"
+                f"5. Interaction: {parsed_json.get('interaction','')}\n"
+                f"6. Style: {parsed_json.get('style','')}\n"
+                f"Start with the LoRA trigger. Line-separated only."
+            )
+
             payload = {
                 "model": model,
                 "temperature": 0.88,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": "You are a creative prompt engineer for Flux. Output line-separated prompts only."},
                     {"role": "user", "content": user_prompt}
                 ]
             }
 
             try:
-                request = urllib.request.Request(
-                    "https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
-                    data=json.dumps(payload).encode('utf-8'),
-                    headers=headers,
-                    method='POST'
-                )
+                request = urllib.request.Request("https://openai-api.codejoyai.com:8003/openai/v1/chat/completions",
+                                                 data=json.dumps(payload).encode("utf-8"),
+                                                 headers=headers,
+                                                 method='POST')
                 with urllib.request.urlopen(request) as response:
                     result = json.loads(response.read().decode('utf-8'))
                     text = result['choices'][0]['message']['content']
@@ -258,22 +249,20 @@ class AutoPromptNode:
             except Exception as e:
                 return (f"Error: {str(e)}",)
 
-        lines = self.state[key]["lines"]
-        idx = self.state[key]["index"] % len(lines)
-        prompt = lines[idx]
+        idx = self.state[key]["index"] % len(self.state[key]["lines"])
         self.state[key]["index"] += 1
+        return (self.state[key]["lines"][idx],)
 
-        return (prompt,)
 
-
+# ========== Node Registration ==========
 NODE_CLASS_MAPPINGS = {
     "SmartAutoPromptNode": SmartAutoPromptNode,
     "GeminiImageToPrompt": GeminiImageToPrompt,
-    "AutoPromptGeneratorNode": AutoPromptNode
+    "AutoPromptGeneratorNode": AutoPromptNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SmartAutoPromptNode": "Prompt Generator (Smart Input)",
     "GeminiImageToPrompt": "Gemini Image 2 Prompt",
-    "AutoPromptGeneratorNode": "Prompt Generator (Auto Step)"
+    "AutoPromptGeneratorNode": "Prompt Generator (Auto Step)",
 }
