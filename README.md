@@ -1,6 +1,6 @@
 # AI_Text_Comfyui (No Dotenv Version)
 
-请使用1.0.8版本，1.0.9版本还在测试升级中
+请使用1.0.7版本，1.0.8版本还在测试升级中
 
 **English | 中文**
 
